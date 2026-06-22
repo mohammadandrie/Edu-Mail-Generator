@@ -87,22 +87,59 @@ def start_bot(apply_url, email, college, collegeID):
     driver = uc.Chrome(options=chrome_options, version_main=149)
     
     print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fg}Navigating to CCCApply...')
-    print(f'{fy}Waiting for Incapsula (5-30s)...')
+    print(f'{fy}Waiting for page to load (5-30s)...')
     driver.get(apply_url)
 
+    # Wait for page to load past Incapsula
+    time.sleep(5)
+    
+    # Check if we need to click "Create Account" first (new flow)
+    for attempt in range(10):
+        page_text = driver.find_element(By.TAG_NAME, "body").text[:200]
+        if 'Request unsuccessful' in page_text or 'Incapsula' in page_text:
+            print(f'{fy}Incapsula challenge in progress... (attempt {attempt+1}/10)')
+            time.sleep(5)
+            driver.refresh()
+            time.sleep(3)
+        else:
+            break
+    
+    print(f'{fg}Incapsula passed! Page loaded.')
+    
+    # Now look for the Create Account button/link
     try:
-        WebDriverWait(driver, 45).until(
+        # Try clicking "Create an OpenCCC account" or similar
+        create_btn = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Create') and contains(text(), 'Account')]"))
+        )
+        create_btn.click()
+        print(f'{fg}Clicked "Create Account"...')
+        time.sleep(3)
+    except:
+        try:
+            create_btn = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.LINK_TEXT, "Create an OpenCCC account"))
+            )
+            create_btn.click()
+            print(f'{fg}Clicked Create Account link...')
+            time.sleep(3)
+        except:
+            print(f'{fy}No Create Account button found, checking if form is already visible...')
+
+    try:
+        WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.ID, "inputFirstName"))
         )
         print(f'{fg}Form loaded!')
     except:
-        print(f'{fr}Incapsula blocked. Page: {driver.current_url}')
+        print(f'{fr}Form not found. Page: {driver.current_url}')
         try:
-            print(f'{fy}{driver.find_element(By.TAG_NAME, "body").text[:300]}')
+            print(f'{fy}{driver.find_element(By.TAG_NAME, "body").text[:500]}')
         except:
             pass
-        driver.close()
-        return
+        print(f'{fy}Check the browser window - you may need to click manually.')
+        # Wait for manual intervention
+        input(f'{fy}Press Enter after navigating to the registration form...')
 
     # STEP 1
     print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fy}Account Progress - 1/3', end='')
