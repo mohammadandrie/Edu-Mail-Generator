@@ -1,21 +1,9 @@
 #!/usr/bin/env python3
 """
-CCC Edu Mail Generator  - Windows Version
-Run this on your Windows PC (home IP bypasses Incapsula)
-
-Requirements:
-    pip install -r requirements_win.txt
-
-Usage:
-    python bot_win.py
+CCC Edu Mail Generator - Windows Edition v3
+Dynamic Keycloak form detection for account.cccmypath.org
 """
-
-import time
-import re
-import string
-import random
-import sys
-import colorama
+import time, re, string, random, sys, colorama
 import undetected_chromedriver as uc
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
@@ -28,25 +16,99 @@ from random import randint
 # === Config ===
 start_url = 'https://www.opencccapply.net/gateway/apply?cccMisCode='
 clg_ids = ['941', '311', '361', '233', '851']
-allColleges = ['MSJC College', 'Contra Costa College', 'City College (San Francisco)', 'Sacramento College', 'Mt San Antonio']
+allColleges = ['MSJC College', 'Contra Costa College', 'City College (SF)', 'Sacramento College', 'Mt San Antonio']
 country_codes = ['855', '561', '800', '325', '330', '229']
 fake = Faker('en_US')
 
 fc = '\033[96m'; fm = '\033[95m'; fg = '\033[92m'; fy = '\033[93m'; fr = '\033[91m'; sb = '\033[1m'; sd = '\033[0m'
 bad_colors = ['BLACK', 'WHITE', 'LIGHTBLACK_EX', 'RESET']
-codes = vars(colorama.Fore)
-colors_list = [codes[c] for c in codes if c not in bad_colors]
+codes = vars(colorama.Fore); colors_list = [codes[c] for c in codes if c not in bad_colors]
 
-def postFix(n):
-    return randint(10**(n-1), (10**n)-1)
+def postFix(n): return randint(10**(n-1), (10**n)-1)
 
-def random_phone_num_generator():
+def random_phone():
     first = str(random.choice(country_codes))
     second = str(random.randint(1, 888)).zfill(3)
-    last = (str(random.randint(1, 9998)).zfill(4))
-    while last in ['1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888']:
-        last = (str(random.randint(1, 9998)).zfill(4))
+    last = str(random.randint(1, 9998)).zfill(4)
+    while last in ['1111','2222','3333','4444','5555','6666','7777','8888']:
+        last = str(random.randint(1, 9998)).zfill(4)
     return f'{first}-{second}-{last}'
+
+def wait_for_page_stable(driver, timeout=60):
+    for i in range(timeout):
+        try:
+            text = driver.find_element(By.TAG_NAME, "body").text[:300]
+            if 'Request unsuccessful' in text:
+                print(f'{fy}Blocked... retry {i+1}/{timeout}')
+                time.sleep(3)
+                driver.refresh()
+                time.sleep(5)
+            elif 'Access denied' in text:
+                print(f'{fy}Access denied... retry {i+1}/{timeout}')
+                time.sleep(3)
+                driver.refresh()
+                time.sleep(5)
+            else:
+                time.sleep(2)
+                return True
+        except:
+            time.sleep(2)
+    return False
+
+def get_field(driver, names, by=By.ID, timeout=5):
+    """Try multiple field names, return first match or None"""
+    el = None
+    for name in names:
+        try:
+            if by == By.ID:
+                el = WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.ID, name)))
+            elif by == By.NAME:
+                el = WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.NAME, name)))
+            return el
+        except:
+            continue
+    return None
+
+def try_fill(driver, field_ids, value, by=By.ID):
+    """Fill first matching field"""
+    el = get_field(driver, field_ids, by)
+    if el:
+        el.clear()
+        el.send_keys(str(value))
+        return True
+    return False
+
+def try_click(driver, field_ids, by=By.ID):
+    el = get_field(driver, field_ids, by)
+    if el:
+        el.click()
+        return True
+    return False
+
+def try_select(driver, select_ids, value, by=By.ID):
+    """Select option by value in first matching select"""
+    el = get_field(driver, select_ids, by)
+    if el:
+        try:
+            Select(el).select_by_value(str(value))
+            return True
+        except:
+            pass
+    return False
+
+def dump_fields(driver):
+    """Debug: dump all form fields"""
+    print(f'\n{fy}=== Current URL: {driver.current_url} ===')
+    for inp in driver.find_elements(By.TAG_NAME, "input"):
+        n = inp.get_attribute("name") or "-"
+        i = inp.get_attribute("id") or "-"
+        t = inp.get_attribute("type") or "text"
+        if t not in ('hidden',):
+            print(f'{fy}  input: name={n:35s} id={i:35s} type={t}')
+    for sel in driver.find_elements(By.TAG_NAME, "select"):
+        n = sel.get_attribute("name") or "-"
+        i = sel.get_attribute("id") or "-"
+        print(f'{fy}  select: name={n:35s} id={i}')
 
 def start_bot(apply_url, email, college, collegeID):
     data = {}
@@ -63,18 +125,18 @@ def start_bot(apply_url, email, college, collegeID):
     randomMonth = data['randomMonth']
     randomDay = data['randomDay']
     randomYear = data['randomYear']
-    studentPhone = random_phone_num_generator()
+    studentPhone = random_phone()
     middleName = random.choice(string.ascii_uppercase)
 
     ex_split = studentAddress.split("\n")
     streetAddress = ex_split[0]
-    if re.compile(',').search(ex_split[1]) is not None:
+    try:
         ex_split1 = ex_split[1].split(', ')
         cityAddress = ex_split1[0]
         ex_split2 = ex_split1[1].split(' ')
         stateAddress = ex_split2[0]
         postalCode = ex_split2[1]
-    else:
+    except:
         ex_split3 = ex_split[1].split(' ')
         cityAddress = ex_split3[0]
         stateAddress = ex_split3[1]
@@ -83,240 +145,154 @@ def start_bot(apply_url, email, college, collegeID):
     print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fg}Launching Chrome...')
     chrome_options = uc.ChromeOptions()
     chrome_options.add_argument('--no-sandbox')
-    
     driver = uc.Chrome(options=chrome_options, version_main=149)
-    
-    print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fg}Navigating to CCCApply...')
-    print(f'{fy}Waiting for page to load (5-30s)...')
+
+    # === PHASE 1: Navigate to CCCApply gateway ===
+    print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fg}Phase 1: Navigate to CCCApply...')
     driver.get(apply_url)
+    wait_for_page_stable(driver)
+    print(f'{fg}Gateway loaded. URL: {driver.current_url}')
 
-    # Wait for page to load past Incapsula
-    time.sleep(5)
+    # === PHASE 2: Click "Create Account" ===
+    print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fg}Phase 2: Looking for Create Account button...')
     
-    # Check if we need to click "Create Account" first (new flow)
-    for attempt in range(10):
-        page_text = driver.find_element(By.TAG_NAME, "body").text[:200]
-        if 'Request unsuccessful' in page_text or 'Incapsula' in page_text:
-            print(f'{fy}Incapsula challenge in progress... (attempt {attempt+1}/10)')
+    # Try auto-clicking
+    clicked = False
+    create_texts = [
+        "Create an OpenCCC account",
+        "Create an Account",
+        "Create Account",
+        "Create New Account",
+        "Sign Up",
+    ]
+    for txt in create_texts:
+        try:
+            btn = driver.find_element(By.XPATH, f"//*[contains(text(),'{txt}')]")
+            btn.click()
+            print(f'{fg}Clicked: {txt}')
+            clicked = True
             time.sleep(5)
-            driver.refresh()
-            time.sleep(3)
-        else:
             break
-    
-    print(f'{fg}Incapsula passed! Page loaded.')
-    
-    # Now look for the Create Account button/link
-    try:
-        # Try clicking "Create an OpenCCC account" or similar
-        create_btn = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Create') and contains(text(), 'Account')]"))
-        )
-        create_btn.click()
-        print(f'{fg}Clicked "Create Account"...')
-        time.sleep(3)
-    except:
-        try:
-            create_btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.LINK_TEXT, "Create an OpenCCC account"))
-            )
-            create_btn.click()
-            print(f'{fg}Clicked Create Account link...')
-            time.sleep(3)
         except:
-            print(f'{fy}No Create Account button found, checking if form is already visible...')
-
-    try:
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.ID, "inputFirstName"))
-        )
-        print(f'{fg}Form loaded!')
-    except:
-        print(f'{fr}Form not found. Page: {driver.current_url}')
+            continue
+    
+    if not clicked:
+        # Try by link href containing 'registration' or 'signup'
         try:
-            print(f'{fy}{driver.find_element(By.TAG_NAME, "body").text[:500]}')
-        except:
-            pass
-        print(f'{fy}Check the browser window - you may need to click manually.')
-        # Wait for manual intervention
-        input(f'{fy}Press Enter after navigating to the registration form...')
-
-    # STEP 1
-    print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fy}Account Progress - 1/3', end='')
-    try:
-        WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.ID, "inputFirstName"))).send_keys(firstName)
-        time.sleep(0.5)
-        driver.find_element(By.ID, "inputMiddleName").send_keys(middleName)
-        time.sleep(0.5)
-        driver.find_element(By.ID, "inputLastName").send_keys(LastName)
-        time.sleep(0.5)
-        driver.find_element(By.XPATH, '//*[@id="hasOtherNameNo"]').click()
-        driver.find_element(By.XPATH, '//*[@id="hasPreferredNameNo"]').click()
-        time.sleep(0.5)
-        driver.find_element(By.CSS_SELECTOR, f'#inputBirthDateMonth option[value="{randomMonth}"]').click()
-        time.sleep(0.5)
-        driver.find_element(By.CSS_SELECTOR, f'#inputBirthDateDay option[value="{randomDay}"]').click()
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputBirthDateYear').send_keys(str(randomYear))
-        time.sleep(0.5)
-        driver.find_element(By.CSS_SELECTOR, f'#inputBirthDateMonthConfirm option[value="{randomMonth}"]').click()
-        time.sleep(0.5)
-        driver.find_element(By.CSS_SELECTOR, f'#inputBirthDateDayConfirm option[value="{randomDay}"]').click()
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputBirthDateYearConfirm').send_keys(str(randomYear))
-        time.sleep(0.5)
-        driver.find_element(By.ID, '-have-ssn-no').click()
-        time.sleep(2)
-        element = driver.find_element(By.ID, 'accountFormSubmit')
-        driver.execute_script("arguments[0].scrollIntoView(true);", element)
-        time.sleep(1)
-        element.click()
-        print(f'{fg} (Success)')
-    except Exception as e:
-        print(f'{fr} Step 1 Error: {e}')
-        driver.close()
-        return
-
-    # STEP 2
-    print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fy}Account Progress - 2/3', end='')
-    try:
-        WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.ID, 'inputEmail'))).send_keys(email)
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputEmailConfirm').send_keys(email)
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputSmsPhone').send_keys(studentPhone)
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputStreetAddress1').send_keys(streetAddress)
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputCity').send_keys(cityAddress)
-        time.sleep(0.5)
-        driver.find_element(By.CSS_SELECTOR, f'#inputState option[value="{stateAddress}"]').click()
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputPostalCode').send_keys(postalCode)
-        time.sleep(1)
-        driver.find_element(By.ID, 'accountFormSubmit').click()
-        time.sleep(3)
-
-        try:
-            driver.find_element(By.XPATH, '//*[@id="messageFooterLabel"]').click()
-            time.sleep(1)
-            while True:
-                chkInputPhone = driver.find_element(By.ID, 'inputSmsPhone')
-                chkError = chkInputPhone.get_attribute('class') or ''
-                if 'error' in chkError:
-                    print(f'{fr}\nInvalid Number, Retrying...')
-                    studentPhone = random_phone_num_generator()
-                    chkInputPhone.clear()
-                    chkInputPhone.send_keys(studentPhone)
-                    time.sleep(0.4)
-                    driver.find_element(By.ID, 'inputAlternatePhone_auth_txt').click()
-                    time.sleep(2)
-                    try:
-                        driver.find_element(By.XPATH, '//*[@id="messageFooterLabel"]').click()
-                    except:
-                        break
-                else:
+            for a in driver.find_elements(By.TAG_NAME, "a"):
+                href = a.get_attribute("href") or ""
+                if 'registration' in href or 'signup' in href or 'create' in href.lower():
+                    a.click()
+                    print(f'{fg}Clicked registration link: {href}')
+                    clicked = True
+                    time.sleep(5)
                     break
         except:
             pass
 
+    if not clicked:
+        print(f'{fy}Cannot find Create Account button automatically.')
+        print(f'{fy}Please click "Create an OpenCCC account" in the browser...')
+        input(f'{fy}Press Enter after clicking...')
+
+    # === PHASE 3: Wait for Keycloak form ===
+    print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fg}Phase 3: Waiting for registration form...')
+    for _ in range(30):
+        cur_url = driver.current_url
+        if 'cccmypath.org' in cur_url or 'keycloak' in cur_url.lower() or 'registration' in cur_url:
+            print(f'{fg}On registration page: {cur_url[:80]}...')
+            break
+        if 'login-actions/registration' in cur_url:
+            print(f'{fg}On registration page!')
+            break
         time.sleep(2)
-        try:
-            time.sleep(1)
-            driver.find_element(By.XPATH, '//*[@id="messageFooterLabel"]').click()
-            time.sleep(1)
-            driver.find_element(By.ID, 'inputAddressValidationOverride').click()
-            time.sleep(1)
-            driver.find_element(By.ID, 'accountFormSubmit').click()
-        except:
-            pass
-        
-        print(f'{fg} (Success)')
-    except Exception as e:
-        print(f'{fr} Step 2 Error: {e}')
-        driver.close()
-        return
 
-    # STEP 3
-    userName = firstName + str(postFix(7))
-    pwd = LastName + str(postFix(5))
-    pin = postFix(4)
+    dump_fields(driver)
     
-    try:
-        WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.ID, 'inputUserId'))).send_keys(userName)
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputPasswd').send_keys(pwd)
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputPasswdConfirm').send_keys(pwd)
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputPin').send_keys(str(pin))
-        time.sleep(0.5)
-        driver.find_element(By.ID, 'inputPinConfirm').send_keys(str(pin))
-        time.sleep(0.5)
+    # === PHASE 4: Fill the registration form ===
+    print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fg}Phase 4: Filling registration form...')
+    
+    # NAME FIELDS (try both old CCC IDs and Keycloak standard names)
+    print(f'{fy}Filling name fields...')
+    try_fill(driver, ['firstName', 'inputFirstName', 'given-name', 'givenName'], firstName)
+    time.sleep(0.3)
+    try_fill(driver, ['lastName', 'inputLastName', 'family-name', 'familyName'], LastName)
+    time.sleep(0.3)
+    try_fill(driver, ['middleName', 'inputMiddleName'], middleName)
+    time.sleep(0.5)
+    
+    # BIRTH DATE
+    print(f'{fy}Filling birth date...')
+    try_select(driver, ['inputBirthDateMonth', 'birthMonth', 'birthdate_month', 'dateOfBirth_month'], randomMonth)
+    time.sleep(0.3)
+    try_select(driver, ['inputBirthDateDay', 'birthDay', 'birthdate_day', 'dateOfBirth_day'], randomDay)
+    time.sleep(0.3)
+    try_fill(driver, ['inputBirthDateYear', 'birthYear', 'birthdate_year', 'dateOfBirth_year'], str(randomYear))
+    time.sleep(0.5)
+    
+    # EMAIL
+    print(f'{fy}Filling email...')
+    try_fill(driver, ['email', 'inputEmail', 'userEmail', 'username'], email)
+    time.sleep(0.3)
+    try_fill(driver, ['emailConfirm', 'inputEmailConfirm', 'email-confirm'], email)
+    time.sleep(0.5)
+    
+    # PHONE
+    print(f'{fy}Filling phone...')
+    try_fill(driver, ['inputSmsPhone', 'phone', 'phoneNumber', 'mobile'], studentPhone)
+    time.sleep(0.5)
+    
+    # ADDRESS
+    print(f'{fy}Filling address...')
+    try_fill(driver, ['inputStreetAddress1', 'streetAddress', 'address', 'street'], streetAddress)
+    time.sleep(0.3)
+    try_fill(driver, ['inputCity', 'city'], cityAddress)
+    time.sleep(0.3)
+    try_select(driver, ['inputState', 'state', 'region'], stateAddress)
+    time.sleep(0.3)
+    try_fill(driver, ['inputPostalCode', 'postalCode', 'zip', 'zipCode'], postalCode)
+    time.sleep(0.5)
 
-        driver.find_element(By.CSS_SELECTOR, '#inputSecurityQuestion1 option[value="5"]').click()
-        time.sleep(0.3)
-        sec_ans1 = LastName + ''.join(random.choices(string.ascii_lowercase, k=4))
-        driver.find_element(By.ID, 'inputSecurityAnswer1').send_keys(sec_ans1)
-        time.sleep(0.3)
+    # SSN / other radio buttons
+    try_click(driver, ['-have-ssn-no', 'hasSSN_no', 'hasSsn_no', 'ssn_no'])
+    time.sleep(0.5)
 
-        driver.find_element(By.CSS_SELECTOR, '#inputSecurityQuestion2 option[value="6"]').click()
-        time.sleep(0.3)
-        driver.find_element(By.ID, 'inputSecurityAnswer2').send_keys(sec_ans1)
-        time.sleep(0.3)
-
-        driver.find_element(By.CSS_SELECTOR, '#inputSecurityQuestion3 option[value="7"]').click()
-        time.sleep(0.3)
-        driver.find_element(By.ID, 'inputSecurityAnswer3').send_keys(sec_ans1)
-
-        print(f'{fr}\n[!] CAPTCHA needed! Solve it in the browser window')
-        
-        solved = 0
-        for _ in range(150):
+    print(f'{fy}Auto-fill done. Check the browser for remaining fields.')
+    print(f'{fy}If there are more fields to fill, type them manually or describe them.')
+    
+    # Dump fields again to see what's left
+    dump_fields(driver)
+    
+    input(f'\n{fy}=== Press Enter when ready to continue (or Ctrl+C to quit)... ===')
+    
+    # Try to find and click submit
+    submit_btns = ['accountFormSubmit', 'submit', 'kc-register-form', 'register']
+    for btn_id in submit_btns:
+        try:
+            btn = driver.find_element(By.ID, btn_id)
+            btn.click()
+            print(f'{fg}Clicked submit: {btn_id}')
+            break
+        except:
             try:
-                xx = driver.find_element(By.NAME, 'captchaResponse')
-                if xx.get_attribute('value') or '':
-                    print(f'{fg}Captcha solved! Proceeding...')
-                    solved = 1
-                    break
-                time.sleep(2)
+                btn = driver.find_element(By.NAME, btn_id)
+                btn.click()
+                print(f'{fg}Clicked submit: {btn_id}')
+                break
             except:
-                time.sleep(2)
-
-        if solved:
-            time.sleep(2)
-            element = driver.find_element(By.ID, 'accountFormSubmit')
-            driver.execute_script("arguments[0].scrollIntoView(true);", element)
-            time.sleep(1)
-            element.click()
-            print(f'{fg}Account Progress - 3/3 (Success)')
-            
-            with open('myccAcc.txt', 'a') as fp:
-                fp.write(f'Email - {email} Password - {pwd} UserName - {userName} First - {firstName} Last - {LastName} College - {college} Pin - {pin}\n\n')
-            
-            print(f'\n{fg}✅ ACCOUNT CREATED!')
-            print(f'{fy}📧 CCC Username: {userName}')
-            print(f'{fy}🔑 Password: {pwd}')
-            print(f'{fy}🔢 PIN: {pin}')
-            print(f'{fg}Saved to myccAcc.txt')
-            
-            input(f'{fy}\nPress Enter to close browser...')
-            driver.close()
-        else:
-            print(f'{fr}Timeout waiting for captcha')
-            driver.close()
-    except Exception as e:
-        print(f'{fr} Step 3 Error: {e}')
-        driver.close()
+                continue
+    
+    print(f'{fy}Waiting... check the browser for result.')
+    input(f'{fy}Press Enter to close...')
+    driver.quit()
 
 def main():
     colorama.init()
     print(f'''{fc}{sd}
 {'='*55}
-  CCC Edu Mail Generator - Windows Edition  
+  CCC Edu Mail Generator v3 - Keycloak Edition  
 {'='*55}
-{fg}Note: Run this on your HOME PC (IP rumah lolos Incapsula)
-{fc}{sd}[{fm}{sb}*{fc}{sd}] {fg}Select a college:\n''')
+{fg}Run on HOME PC (IP rumah lolos Incapsula)''')
     
     for idx, c in enumerate(allColleges):
         print(f'{fc}{sd}[{fm}{sb}*{fc}{sd}] {fy}{idx+1} - {random.choice(colors_list)}{c}')
@@ -324,18 +300,13 @@ def main():
     while True:
         try:
             inp = int(input(f'\n[{fc}{sd}*{fc}{sd}] College ID (1-5): '))
-            if 1 <= inp <= len(allColleges):
-                break
-        except:
-            pass
+            if 1 <= inp <= len(allColleges): break
+        except: pass
     
     idx = inp - 1
     apply_url = start_url + clg_ids[idx]
     print(f'{fg}Selected: {allColleges[idx]}')
-    
     email = input(f'{fc}{sd}[{fc}{sd}*{fc}{sd}] Your email: ').strip()
-    
-    print(f'{fg}Launching browser...\n')
     start_bot(apply_url, email, allColleges[idx], idx + 1)
 
 if __name__ == '__main__':
